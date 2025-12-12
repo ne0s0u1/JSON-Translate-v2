@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>JSON / Markdown 翻译器</title>
+<!-- 引入字体 -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- 引入 Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- 引入 Icons -->
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<style>
+  /* 滚动条美化 */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  
+  body { font-family: 'Inter', sans-serif; }
+  .lucide { vertical-align: middle; }
+
+  /* 极简呼吸背景 (无 GPU 负担) */
+  @keyframes breathe {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.8; }
+  }
+  .animate-breathe { animation: breathe 8s ease-in-out infinite; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen p-3 md:p-8 relative text-slate-800 flex flex-col items-center overflow-x-hidden">
+
+<!-- 
+   🎨 背景装饰 (极速版)
+   纯 CSS 径向渐变，无 blur 滤镜，彻底解决卡顿。
+-->
+<div class="fixed inset-0 overflow-hidden pointer-events-none -z-10 bg-slate-50">
+  <!-- 左上紫光 -->
+  <div class="absolute top-0 left-0 w-[70vw] h-[70vw] bg-[radial-gradient(circle_at_top_left,rgba(216,180,254,0.3)_0%,transparent_60%)] animate-breathe"></div>
+  <!-- 右下蓝光 -->
+  <div class="absolute bottom-0 right-0 w-[70vw] h-[70vw] bg-[radial-gradient(circle_at_bottom_right,rgba(191,219,254,0.3)_0%,transparent_60%)] animate-breathe" style="animation-delay: 4s;"></div>
+  <!-- 中间暖光 -->
+  <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-[radial-gradient(circle,rgba(255,255,255,0.8)_0%,transparent_100%)]"></div>
+</div>
+
+<section class="container max-w-[95%] 2xl:max-w-[1600px] w-full transition-all duration-300">
+  <!-- 
+     主容器：移除 backdrop-filter，改用 bg-white/70
+     实现高透效果，同时保留边框质感。
+  -->
+  <div class="bg-white/70 rounded-[32px] border border-white/80 shadow-[0_4px_24px_rgba(0,0,0,0.02)] p-6 md:p-10 relative overflow-hidden ring-1 ring-white/60 min-h-[85vh] flex flex-col">
+    
+    <!-- 标题区 & 模式切换 -->
+    <div class="flex flex-col md:flex-row items-center justify-between mb-8 border-b border-slate-200/60 pb-6 gap-6 relative z-10">
+      <div class="flex items-center gap-4">
+        <img src="favicon.svg" alt="logo" class="w-10 h-10 drop-shadow-sm">
+        <h1 class="text-3xl font-bold text-slate-800 tracking-tight">JSON / Markdown 翻译</h1>
+      </div>
+
+      <!-- 模式切换按钮 (胶囊样式) -->
+      <div class="flex bg-white/50 p-1.5 rounded-2xl border border-slate-200/50 shadow-sm">
+        <button id="mode-json" class="px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 flex items-center gap-2 text-slate-500 hover:text-slate-700 bg-white text-indigo-600 shadow-sm ring-1 ring-black/5">
+          <i data-lucide="braces" class="w-4 h-4"></i> JSON 模式
+        </button>
+        <button id="mode-md" class="px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 flex items-center gap-2 text-slate-500 hover:text-slate-700 hover:bg-white/50">
+          <i data-lucide="file-text" class="w-4 h-4"></i> Markdown 模式
+        </button>
+      </div>
+    </div>
+
+    <!-- JSON 翻译器区域 -->
+    <div id="jsonSection" class="flex-1 flex flex-col lg:flex-row gap-8 relative z-10">
+      <!-- 左侧：输入控制区 -->
+      <div class="lg:w-1/3 flex flex-col gap-5">
+        <div class="bg-white/50 rounded-2xl p-5 border border-slate-200/50 shadow-sm flex flex-col gap-4">
+            
+            <!-- API Key -->
+            <div>
+                <label class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">API Key</label>
+                <input id="userApiKey" type="password" placeholder="sk-..." class="w-full h-11 px-4 bg-white/80 border border-transparent rounded-xl text-slate-700 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-200 transition-all outline-none shadow-sm font-mono">
+            </div>
+
+            <!-- 源 JSON -->
+            <div class="flex-1 flex flex-col">
+                <div class="flex justify-between items-center mb-1.5">
+                    <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">源 JSON</label>
+                    <!-- 上传按钮 -->
+                    <div class="relative">
+                        <input id="uploadFile" type="file" accept=".json" class="hidden" />
+                        <label for="uploadFile" id="uploadLabel" class="cursor-pointer flex items-center gap-1.5 text-[10px] bg-white/80 px-2.5 py-1 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-all border border-indigo-100 shadow-sm font-medium">
+                            <i data-lucide="upload-cloud" class="w-3 h-3"></i> <span>上传文件</span>
+                        </label>
+                    </div>
+                </div>
+                <textarea id="sourceJSON" placeholder="粘贴 JSON 内容..." class="w-full p-4 min-h-[200px] bg-white/80 border border-transparent rounded-xl text-slate-700 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-200 transition-all outline-none shadow-sm resize-y font-mono text-xs leading-relaxed"></textarea>
+            </div>
+
+            <!-- 最佳参考 -->
+            <div>
+                <label class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">最佳翻译参考</label>
+                <input id="bestExample" type="text" placeholder="例如：AI Stem Splitter => AI 音轨分离器" class="w-full h-11 px-4 bg-white/80 border border-transparent rounded-xl text-slate-700 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-200 transition-all outline-none shadow-sm">
+            </div>
+
+            <!-- 按钮组 -->
+            <div class="grid grid-cols-2 gap-3 pt-2">
+                <button id="runBtn" class="h-12 rounded-xl bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:shadow-indigo-300 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm">
+                    <i data-lucide="rocket" class="w-4 h-4"></i> 开始翻译
+                </button>
+                <button id="downloadAll" class="h-12 rounded-xl bg-white text-slate-700 font-bold border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-indigo-200 hover:text-indigo-600 transition-all flex items-center justify-center gap-2 text-sm">
+                    <i data-lucide="download" class="w-4 h-4"></i> 下载 ZIP
+                </button>
+            </div>
+
+            <!-- 状态栏 -->
+            <div class="bg-white/60 rounded-xl p-3 border border-slate-100 flex flex-col gap-2">
+                <div class="flex justify-between items-center text-xs font-medium text-slate-600">
+                    <span id="status" class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-slate-300"></span> 待机中</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div id="progressBar" class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 w-0 transition-all duration-500"></div>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- 右侧：结果预览 (Grid 卡片布局) -->
+      <div class="lg:w-2/3 bg-white/50 rounded-2xl border border-white/60 shadow-inner p-6 flex flex-col min-h-[500px]" id="outputArea">
+         <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+           <div class="p-1.5 bg-green-100/80 rounded-lg text-green-700"><i data-lucide="check-circle-2" class="w-4 h-4"></i></div>
+           翻译结果预览
+         </h2>
+         
+         <!-- 结果网格容器 -->
+         <div id="output" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto pr-2 custom-scroll flex-1 content-start">
+             <!-- 空状态占位 -->
+             <div class="col-span-full flex flex-col items-center justify-center text-slate-400 h-64 gap-3">
+                 <i data-lucide="ghost" class="w-10 h-10 opacity-50"></i>
+                 <p class="text-sm">暂无翻译结果</p>
+             </div>
+         </div>
+      </div>
+    </div>
+
+    <!-- Markdown 翻译器区域 -->
+    <div id="mdSection" class="hidden flex-1 flex flex-col lg:flex-row gap-8 relative z-10">
+      <div class="lg:w-1/3 flex flex-col gap-5">
+        <div class="bg-white/50 rounded-2xl p-5 border border-slate-200/50 shadow-sm flex flex-col gap-4 h-full">
+            <h2 class="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
+                <i data-lucide="file-text" class="w-5 h-5 text-indigo-500"></i> Markdown 翻译
+            </h2>
+            
+            <div class="flex-1 flex flex-col">
+                <label class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">源文本</label>
+                <textarea id="markdownInput" placeholder="粘贴 Markdown 文本..." class="w-full flex-1 p-4 bg-white/80 border border-transparent rounded-xl text-slate-700 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-indigo-200 transition-all outline-none shadow-sm resize-y font-mono text-xs leading-relaxed"></textarea>
+            </div>
+
+            <div>
+                <label class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 block">最佳参考</label>
+                <input id="mdBestExample" type="text" placeholder="例如：AI Music Generator" class="w-full h-11 px-4 bg-white/80 border border-transparent rounded-xl text-slate-700 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-200 transition-all outline-none shadow-sm">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <button id="runMdBtn" class="h-12 rounded-xl bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-sm">
+                    <i data-lucide="rocket" class="w-4 h-4"></i> 开始翻译
+                </button>
+                <button id="copyCsvBtn" class="h-12 rounded-xl bg-white text-emerald-700 font-bold border border-emerald-100 shadow-sm hover:bg-emerald-50 transition-all flex items-center justify-center gap-2 text-sm">
+                    <i data-lucide="clipboard-copy" class="w-4 h-4"></i> 复制 CSV
+                </button>
+            </div>
+            <div id="mdStatus" class="text-center text-xs font-medium text-slate-500 bg-white/60 rounded-lg p-2">待机中</div>
+        </div>
+      </div>
+
+      <div class="lg:w-2/3 bg-white/50 rounded-2xl border border-white/60 shadow-inner p-0 flex flex-col overflow-hidden relative">
+          <div class="p-4 border-b border-slate-200/50 bg-white/30 flex justify-between items-center">
+              <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                  <i data-lucide="table" class="w-4 h-4"></i> 结果预览
+              </h2>
+          </div>
+          <div class="flex-1 overflow-auto custom-scroll p-4">
+              <table class="w-full text-left border-collapse min-w-[800px]">
+                  <thead>
+                      <tr class="bg-white/60 text-xs uppercase text-slate-600 font-bold tracking-wider text-center">
+                          <th class="p-4 border-b border-slate-200/50">等待输入...</th>
+                      </tr>
+                  </thead>
+                  <tbody id="mdOutput" class="text-sm text-slate-700 divide-y divide-slate-200/50"></tbody>
+              </table>
+          </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="relative z-10 text-center text-slate-400 text-xs font-medium py-6">
+  © 2025 Translator — Powered by Gemini 2.5 Flash
+</footer>
+
+<!-- 全屏展开模态框 (用于查看完整 JSON) -->
+<div id="expandModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-900/20 backdrop-blur-sm p-4 transition-all opacity-0 scale-95">
+    <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl border border-white ring-1 ring-slate-200 transform transition-all duration-300">
+        <!-- Header -->
+        <div class="flex justify-between items-center p-5 border-b border-slate-100">
+            <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <div class="p-1.5 bg-indigo-100 rounded text-indigo-600"><i data-lucide="maximize-2" class="w-4 h-4"></i></div>
+                <span id="modalTitle">完整内容预览</span>
+            </h3>
+            <div class="flex gap-2">
+                <button id="modalCopyBtn" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg transition-colors font-medium flex items-center gap-1">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i> 复制
+                </button>
+                <button id="modalCloseBtn" class="w-8 h-8 rounded-full bg-slate-50 text-slate-500 flex items-center justify-center hover:bg-slate-100 hover:text-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+        <!-- Body -->
+        <div class="flex-1 overflow-auto p-0 bg-slate-50/30">
+            <pre id="modalContent" class="p-6 text-xs font-mono text-slate-700 whitespace-pre-wrap break-words leading-relaxed"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+// 初始化图标
+lucide.createIcons();
+
+const API = "https://json-translator-v2.ne0s0u1-pd.workers.dev";
+const langs = ["it", "th", "ru", "ar", "nl", "tr", "pl", "da", "nb", "id"];
+const el = {
+  runBtn: document.getElementById("runBtn"),
+  output: document.getElementById("output"),
+  status: document.getElementById("status"),
+  apiKey: document.getElementById("userApiKey"),
+  src: document.getElementById("sourceJSON"),
+  best: document.getElementById("bestExample"),
+  progress: document.getElementById("progressBar"),
+};
+
+// 模式切换
+const jsonBtn = document.getElementById("mode-json");
+const mdBtn = document.getElementById("mode-md");
+const jsonSection = document.getElementById("jsonSection");
+const mdSection = document.getElementById("mdSection");
+
+const activeClass = "bg-white text-indigo-600 shadow-sm ring-1 ring-black/5".split(" ");
+const inactiveClass = "text-slate-500 hover:text-slate-700 hover:bg-white/50".split(" ");
+
+function setMode(mode) {
+    if (mode === 'json') {
+        jsonSection.classList.remove("hidden");
+        mdSection.classList.add("hidden");
+        jsonBtn.classList.remove(...inactiveClass); jsonBtn.classList.add(...activeClass);
+        mdBtn.classList.remove(...activeClass); mdBtn.classList.add(...inactiveClass);
+    } else {
+        mdSection.classList.remove("hidden");
+        jsonSection.classList.add("hidden");
+        mdBtn.classList.remove(...inactiveClass); mdBtn.classList.add(...activeClass);
+        jsonBtn.classList.remove(...activeClass); jsonBtn.classList.add(...inactiveClass);
+    }
+}
+jsonBtn.addEventListener("click", () => setMode('json'));
+mdBtn.addEventListener("click", () => setMode('md'));
+
+// 保存API Key
+el.apiKey.value = localStorage.getItem("apicore_user_key") || "";
+el.apiKey.addEventListener("input", ()=>localStorage.setItem("apicore_user_key", el.apiKey.value));
+
+// 上传文件逻辑
+const fileInput = document.getElementById("uploadFile");
+const uploadLabel = document.getElementById("uploadLabel");
+const uploadSpan = uploadLabel.querySelector("span");
+fileInput.addEventListener("change", e=>{
+  const f = e.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{ el.src.value = r.result; uploadSpan.textContent = f.name; };
+  r.readAsText(f);
+});
+
+// JSON 翻译
+async function translateAll(){
+  const jsonText = el.src.value.trim();
+  const bestExample = el.best.value.trim();
+  const userApiKey = el.apiKey.value.trim();
+  if(!jsonText || !userApiKey) return alert("请填写 JSON 与 API Key");
+  
+  el.runBtn.disabled = true;
+  el.runBtn.classList.add("opacity-70", "cursor-not-allowed");
+  el.status.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> 正在并发翻译中...`;
+  lucide.createIcons();
+  
+  el.output.innerHTML = ""; 
+  el.progress.style.width = "10%";
+  
+  try {
+      const res = await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jsonText,bestExample,userApiKey,langs})});
+      const data = await res.json();
+      
+      if(data.error){ 
+          el.status.textContent = "❌ " + data.error; 
+          el.runBtn.disabled=false; 
+          el.runBtn.classList.remove("opacity-70", "cursor-not-allowed");
+          el.progress.style.width="0%"; 
+          return; 
+      }
+      
+      renderResults(data.results);
+      
+      el.status.innerHTML = `<span class="text-green-600 flex items-center gap-1"><i data-lucide="check" class="w-3 h-3"></i> 翻译完成</span>`;
+      el.progress.style.width = "100%"; 
+      el.runBtn.disabled=false;
+      el.runBtn.classList.remove("opacity-70", "cursor-not-allowed");
+      lucide.createIcons();
+  } catch (e) {
+      alert("Network Error: " + e.message);
+      el.runBtn.disabled=false;
+      el.runBtn.classList.remove("opacity-70", "cursor-not-allowed");
+  }
+}
+
+function renderResults(results){
+  const out = el.output; out.innerHTML = "";
+  let done=0, total=Object.keys(results).length;
+  
+  for(const [lang, raw] of Object.entries(results)){
+    const content = cleanFence(raw); // 不修改，保留原始内容
+    const div = document.createElement("div");
+    
+    // 卡片样式：高透白底 + 悬停阴影
+    div.className = "bg-white/60 border border-white/80 rounded-xl shadow-sm p-4 flex flex-col hover:shadow-md hover:bg-white/90 transition-all group h-64";
+    
+    div.innerHTML = `
+      <div class="flex justify-between items-center mb-3">
+          <h3 class='text-slate-700 font-bold text-xs uppercase tracking-wider flex items-center gap-2'>
+             <span class="w-2 h-2 rounded-full bg-indigo-400"></span> ${lang.toUpperCase()}
+          </h3>
+          <div class="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+             <!-- 展开按钮 -->
+             <button onclick="expandCard('${lang}', this)" class="p-1.5 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded-md transition-colors" title="展开查看">
+                <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+             </button>
+             <!-- 下载按钮 -->
+             <a download='${lang}.json' href='data:application/json;charset=utf-8,${encodeURIComponent(content)}' class='p-1.5 hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 rounded-md transition-colors' title="下载">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+             </a>
+          </div>
+      </div>
+      
+      <!-- 预览区域：只读展示，隐藏超出部分 -->
+      <div class="flex-1 bg-slate-50/50 rounded-lg p-3 border border-slate-200/50 relative overflow-hidden group-hover:border-indigo-100 transition-colors">
+         <pre class='text-[10px] font-mono text-slate-500 whitespace-pre-wrap break-all h-full overflow-hidden'>${escapeHTML(content)}</pre>
+         <!-- 底部渐变遮罩 -->
+         <div class="absolute bottom-0 left-0 w-full h-10 bg-gradient-to-t from-slate-50 to-transparent"></div>
+      </div>
+      
+      <!-- 隐藏的完整数据 (用于展开) -->
+      <textarea class="hidden data-source">${escapeHTML(content)}</textarea>
+    `;
+    out.appendChild(div);
+    done++; el.progress.style.width=((done/total)*100)+"%";
+  }
+  lucide.createIcons(); // 刷新新添加的图标
+}
+function cleanFence(text){return String(text||"").replace(/^```(?:json)?\s*/i,"").replace(/```+$/i,"").trim();}
+function escapeHTML(str){return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+document.getElementById("runBtn").addEventListener("click", translateAll);
+document.getElementById("downloadAll").addEventListener("click", async ()=>{
+  const cards=document.querySelectorAll("#output .data-source");
+  if(!cards.length){alert("没有可下载的内容");return;}
+  const zip=await createZip(); const blob=await zip.generateAsync({type:"blob"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="translations.zip"; a.click();
+});
+
+async function createZip(){
+  if(typeof JSZip==="undefined"){ await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"); }
+  const zip=new JSZip(); document.querySelectorAll("#output > div").forEach(div=>{
+    const lang=div.querySelector("h3").textContent.trim();
+    const content=div.querySelector(".data-source").value;
+    // 反转义 HTML 实体，还原 JSON
+    const cleanContent = content.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    zip.file(`${lang}.json`, cleanContent);
+  }); return zip;
+}
+
+// =================== 模态框逻辑 (Expand Modal) ===================
+const modal = document.getElementById('expandModal');
+const modalTitle = document.getElementById('modalTitle');
+const modalContent = document.getElementById('modalContent');
+const modalCloseBtn = document.getElementById('modalCloseBtn');
+const modalCopyBtn = document.getElementById('modalCopyBtn');
+
+// 打开模态框 (挂载到 window 供 HTML onclick 调用)
+window.expandCard = function(lang, btn) {
+    const card = btn.closest('.group'); 
+    const fullContent = card.querySelector('.data-source').value; // 获取隐藏的完整内容
+    
+    // 解码 HTML 实体用于显示
+    const decodedContent = fullContent.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    
+    modalTitle.innerText = `${lang.toUpperCase()} - 完整内容`;
+    modalContent.innerText = decodedContent;
+    
+    // 显示模态框
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+        modal.classList.remove('opacity-0', 'scale-95');
+        modal.classList.add('opacity-100', 'scale-100');
+    }, 10);
+}
+
+// 关闭模态框
+function closeModal() {
+    modal.classList.remove('opacity-100', 'scale-100');
+    modal.classList.add('opacity-0', 'scale-95');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 300);
+}
+
+modalCloseBtn.addEventListener('click', closeModal);
+modal.addEventListener('click', (e) => {
+    if(e.target === modal) closeModal();
+});
+
+// 模态框复制功能
+modalCopyBtn.addEventListener('click', () => {
+    const text = modalContent.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        const originalHTML = modalCopyBtn.innerHTML;
+        modalCopyBtn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5"></i> 已复制`;
+        lucide.createIcons();
+        setTimeout(() => {
+            modalCopyBtn.innerHTML = originalHTML;
+            lucide.createIcons();
+        }, 2000);
+    });
+});
+
+// =================== Markdown 模式逻辑 ===================
+document.getElementById("runMdBtn").addEventListener("click", async ()=>{
+  const text = document.getElementById("markdownInput").value.trim();
+  const bestExample = document.getElementById("mdBestExample").value.trim();
+  const userApiKey = el.apiKey.value.trim();
+  if (!text || !userApiKey) return alert("请填写 Markdown 与 API Key");
+
+  const status = document.getElementById("mdStatus");
+  status.textContent = "🚧 正在并发翻译...";
+  
+  const btn = document.getElementById("runMdBtn");
+  btn.disabled = true;
+  btn.classList.add("opacity-70", "cursor-not-allowed");
+
+  try {
+      const res = await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          markdownText: text,
+          bestExample,
+          userApiKey,
+          langs,
+          mode: "markdown"
+        }),
+      });
+
+      const data = await res.json();
+      const tbody = document.getElementById("mdOutput");
+      tbody.innerHTML = "";
+
+      if (data.error) {
+        status.textContent = "❌ " + data.error;
+        btn.disabled = false;
+        btn.classList.remove("opacity-70", "cursor-not-allowed");
+        return;
+      }
+
+      // 设置横向表头
+      const table = tbody.closest("table");
+      const thead = table.querySelector("thead");
+      thead.innerHTML = "<tr>" + langs.map(l => `<th class='py-3 px-4 border-b border-slate-200 bg-white/80 text-center text-slate-600 font-bold text-xs uppercase sticky top-0 backdrop-blur-none'>${l.toUpperCase()}</th>`).join("") + "</tr>";
+
+      // 横向一行结果
+      const row = document.createElement("tr");
+      row.innerHTML = langs.map(lang => {
+        const val = data.results[lang] || "";
+        return `<td class='border-b border-slate-200/50 px-4 py-3 font-mono text-xs text-slate-700 whitespace-pre-wrap align-top bg-white/40 hover:bg-white/70 transition-colors min-w-[200px]'>${val}</td>`;
+      }).join("");
+      tbody.appendChild(row);
+
+      status.textContent = "✅ 翻译完成";
+      btn.disabled = false;
+      btn.classList.remove("opacity-70", "cursor-not-allowed");
+  } catch (e) {
+      status.textContent = "❌ 网络错误";
+      btn.disabled = false;
+      btn.classList.remove("opacity-70", "cursor-not-allowed");
+  }
+});
+
+// 复制 CSV
+document.getElementById("copyCsvBtn").addEventListener("click", ()=>{
+  const tbody = document.getElementById("mdOutput");
+  const cells = tbody.querySelectorAll("td");
+  if (cells.length === 0) return alert("没有可复制的内容");
+  
+  const values = Array.from(cells).map(td => td.innerText.replace(/\n/g, "\\n"));
+  const tsv = values.join("\t");
+  navigator.clipboard.writeText(tsv);
+  alert("✅ 已复制 TSV 数据行到剪贴板！");
+});
+
+</script>
+</body>
+</html>
